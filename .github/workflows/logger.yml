@@ -1,0 +1,35 @@
+name: rewards-book-logger
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7 */6 * * *"      # fallback; each run also starts the next one when it ends
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: logger
+  cancel-in-progress: false
+env:
+  END_AT: "2026-11-14T02:00"   # UTC; after this the logger exits immediately and the chain stops
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log books
+        run: python3 logger.py 330
+      - name: Save data
+        if: always()
+        run: |
+          git config user.name "rewards-logger"
+          git config user.email "rewards-logger@users.noreply.github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "data $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase && git push
+      - name: Start next run
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(date -u +%Y-%m-%dT%H:%M)" \< "$END_AT" ]; then gh workflow run logger.yml --repo "$GITHUB_REPOSITORY"; fi
